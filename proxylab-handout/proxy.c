@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include "csapp.h"
+#include <string.h>
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -72,10 +73,93 @@ void *thread(void *vargp)
     char *port;
     char *reqWire;
 
-    unsigned int reqBufPos = 0;
+    char headerTestSubstr[6];
+    memcpy(headerTestSubstr, buf, 3);
+    headerTestSubstr[3] = '\0';
+
+    strupr(headerTestSubstr);
+
+    if(!strcmp(headerTestSubstr, "GET"))
+    {
+        //TODO: Generate bad method response to client
 
 
 
+    }
+
+    unsigned int reqBufPos = 4; 
+
+    memcpy(headerTestSubstr, &buf[reqBufPos], 5);
+    headerTestSubstr[5] = '\0';
+
+    if(strcmp(headerTestSubstr, "http:") || strcmp(headerTestSubstr, "https"))
+    {
+        //TODO: generate malformed url response to client
+
+
+    }
+    reqBufPos += 7;
+
+    if(strcmp(headerTestSubstr, "https"))
+    {
+        reqBufPos++;
+    }
+
+    unsigned int baseURLlength = 0;
+    unsigned int portSpot = 0;
+    unsigned int baseURLWithPortLength = 0;
+
+    while(buf[reqBufPos + baseURLlength] != '/')
+    {
+        if(buf[reqBufPos + baseURLlength] == ':')
+        {
+            portSpot = reqBufPos + baseURLlength;
+        }
+
+        baseURLlength++;
+    }
+
+    baseURLWithPortLength = baseURLlength;
+
+    char *portNumber = NULL;
+    int portLength = 0;
+
+    if(portSpot)
+    {
+        portLength = (reqBufPos + baseURLlength) - (portSpot /*+1*/);
+
+        char portN[portLength /*+ 1*/];
+        memcpy(portN, &buf[portSpot +1], portLength);
+        portN[portLength] = '\0';
+
+        portNumber = portN;
+
+        baseURLlength -= (portLength +1);
+    }
+
+    char baseURL[baseURLlength + 1];
+
+    memcpy(baseURL, &buf[reqBufPos], baseURLlength);
+    baseURL[baseURLlength] = '\0';
+
+    reqBufPos += baseURLWithPortLength + 1;
+
+    size_t URIlength = 0;
+
+    while(buf[reqBufPos] != '\r' && buf[reqBufPos + 1] != '\n')
+    {
+        URIlength++;
+    }
+
+    char URI[URIlength +1];
+
+    memcpy(URI, &buf[reqBufPos], URIlength);
+
+    URI[URIlength -1] = '0';
+    URI[URIlength] = '\0';
+
+    //extract headers
+    
 
     //Connect to server
     int serverfd = open_clientfd(hostname, port);
@@ -83,7 +167,7 @@ void *thread(void *vargp)
     if(serverfd == -1)
     {
         //fprintf(stderr, "Failed to connect to host %s:%s\n", hostname, port);
-        //TODO: generate error response for client
+        //TODO: generate not found response for client
 
 
 
