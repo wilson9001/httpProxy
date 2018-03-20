@@ -15,19 +15,6 @@ static const char *connectionHeader = "\r\nConnection: close";
 static const char *proxyHeader = "\r\nProxy-Connection: close";
 static const int wirelen = 2000;
 
-/*typedef struct request request, *request;
-struct request
-{
-
-};*/
-
-typedef struct request
-{
-    unsigned char *providedHeaders;
-    //request *nextHeader;
-
-} request;
-
 void *thread(void *vargp);
 
 int main(int argc, char **argv)
@@ -59,7 +46,7 @@ void *thread(void *vargp)
     int connfd = *((int *)vargp);
     Pthread_detach(pthread_self());
     Free(vargp);
-    printf("Thread created for connection on file descriptor %d.\n", connfd); // <--print functions are not thread safe...
+    printf("Thread created for connection on file descriptor %d.\n", connfd); // <--print functions are not thread safe... will need to remove.
 
     //Read data from client
     size_t n;
@@ -80,7 +67,6 @@ void *thread(void *vargp)
     memcpy(headerTestSubstr, buf, 3);
     headerTestSubstr[3] = '\0';
 
-    //strupr(headerTestSubstr);
     printf("Method: '%s'\n", headerTestSubstr);
 
     if (strcmp(headerTestSubstr, "GET") && strcmp(headerTestSubstr, "get") && strcmp(headerTestSubstr, "Get"))
@@ -163,7 +149,7 @@ void *thread(void *vargp)
 
     printf("Base URL: '%s'\n", baseURL);
 
-    //reqBufPos += baseURLWithPortLength + 1;//begin URI, skipping first / in case the user doesn't put it
+    //begin URI, skipping first / in case the user doesn't put it
     if (buf[reqBufPos + baseURLWithPortLength] == '/')
     {
         reqBufPos += baseURLWithPortLength + 1;
@@ -187,8 +173,7 @@ void *thread(void *vargp)
 
     memcpy(URI, &buf[reqBufPos], URIlength);
 
-    //URI[URIlength - 2] = '.';
-    //URI[URIlength -1] = '0';
+    URI[URIlength -1] = '0';
     URI[URIlength] = '\0';
 
     printf("URI: '%s'\n", URI);
@@ -223,7 +208,6 @@ void *thread(void *vargp)
 
     if (!hostHeaderBegin)
     {
-        //char *hostHeader = "Host: ";
         char hostHeader[200];
         memset(hostHeader, '\0', 200);
         strcat(hostHeader, "Host: ");
@@ -234,14 +218,12 @@ void *thread(void *vargp)
 
     if (!connectHeaderBegin)
     {
-        //strcat(reqWire, "\r\nConnection: close");
         strcat(reqWire, connectionHeader);
         printf("'%s'\n", reqWire);
     }
 
     if (!proxyConnectHeaderBegin)
     {
-        //strcat(reqWire, "\r\nProxy-Connection: close");
         strcat(reqWire, proxyHeader);
         printf("'%s'\n", reqWire);
     }
@@ -269,9 +251,6 @@ void *thread(void *vargp)
 
     if (serverfd == -1)
     {
-        //fprintf(stderr, "Failed to connect to host %s:%s\n", hostname, port);
-        //TODO: generate not found response for client
-
         char *responseMessage = "HTTP/1.0 404 Not Found\r\n\r\n";
         printf("404\n");
 
