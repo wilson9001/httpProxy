@@ -58,7 +58,9 @@ void *thread(void *vargp)
 
     //parse request to get address, port, URI, and headers.
     char *hostname;
-    char *portNumber = NULL;
+    char portNumber[8];
+    memset(portNumber, '\0', 8);
+
     char reqWire[wirelen * 2];
 
     memset(reqWire, '\0', wirelen);
@@ -130,17 +132,19 @@ void *thread(void *vargp)
 
     if (portSpot)
     {
-        portLength = (reqBufPos + baseURLlength) - (portSpot /*+1*/);
+        portLength = (reqBufPos + baseURLlength) - (portSpot + 1);
 
-        char portN[portLength /*+ 1*/];
-        memcpy(portN, &buf[portSpot + 1], portLength);
-        portN[portLength] = '\0';
+        //char portN[portLength];
+        memcpy(portNumber, &buf[portSpot + 1], portLength);
+        portNumber[portLength] = '\0';
 
-        portNumber = portN;
-        printf("Port specified: '%s'\n", portN);
+        //portNumber = portN;
+        printf("Port specified: '%s'\n", portNumber);
 
         baseURLlength -= (portLength + 1);
     }
+
+    //printf("Value outside if: '%s'\n", portNumber);
 
     char baseURL[baseURLlength + 1];
 
@@ -200,7 +204,7 @@ void *thread(void *vargp)
     strcat(reqWire, "GET /");
 
     strcat(reqWire, URI);
-    printf("Teapot\n");
+    //printf("Teapot\n");
 
     strcat(reqWire, "\r\n");
 
@@ -241,10 +245,12 @@ void *thread(void *vargp)
 
     hostname = baseURL;
 
-    if (!portNumber)
+    if (!portSpot)
     {
-        portNumber = "80";
+        strcat(portNumber, "80");
     }
+
+    printf("Port number just before openfd: %s\n", portNumber);
 
     //Connect to server
     int serverfd = open_clientfd(hostname, portNumber);
