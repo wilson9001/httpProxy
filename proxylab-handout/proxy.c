@@ -11,8 +11,9 @@
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
-static const char *connectionHeader = "Connection: close";
-static const char *proxyHeader = "Proxy-Connection: close";
+static const char *connectionHeader = "\r\nConnection: close";
+static const char *proxyHeader = "\r\nProxy-Connection: close";
+static const int wirelen = 2000;
 
 /*typedef struct request request, *request;
 struct request
@@ -58,7 +59,7 @@ void *thread(void *vargp)
     int connfd = *((int *)vargp);
     Pthread_detach(pthread_self());
     Free(vargp);
-    //printf("Thread created for connection on file descriptor %d.\n", connfd); <--print functions are not thread safe...
+    printf("Thread created for connection on file descriptor %d.\n", connfd); // <--print functions are not thread safe...
 
     //Read data from client
     size_t n;
@@ -71,20 +72,23 @@ void *thread(void *vargp)
     //parse request to get address, port, URI, and headers.
     char *hostname;
     char *portNumber = NULL;
-    char *reqWire;
+    char reqWire[wirelen * 2];
+
+    memset(reqWire, '\0', wirelen);
 
     char headerTestSubstr[6];
     memcpy(headerTestSubstr, buf, 3);
     headerTestSubstr[3] = '\0';
 
-    strupr(headerTestSubstr);
+    //strupr(headerTestSubstr);
+    printf("Method: '%s'\n", headerTestSubstr);
 
-    if (!strcmp(headerTestSubstr, "GET"))
+    if (strcmp(headerTestSubstr, "GET") && strcmp(headerTestSubstr, "get") && strcmp(headerTestSubstr, "Get"))
     {
         //generate bad method response to client
         char *responseMessage = "HTTP/1.0 405 Method Not Allowed\r\n\r\n";
-
-        Rio_writen(connfd, responseMessage, sizeof(responseMessage));
+        printf("405\n");
+        Rio_writen(connfd, responseMessage, strlen(responseMessage));
 
         Close(connfd);
 
@@ -96,12 +100,15 @@ void *thread(void *vargp)
     memcpy(headerTestSubstr, &buf[reqBufPos], 5);
     headerTestSubstr[5] = '\0';
 
-    if (strcmp(headerTestSubstr, "http:") || strcmp(headerTestSubstr, "https"))
+    printf("HTTP protocol: '%s'\n", headerTestSubstr);
+
+    if (strcmp(headerTestSubstr, "http:") && strcmp(headerTestSubstr, "https"))
     {
         //generate malformed request response to client
         char *responseMessage = "HTTP/1.0 400 Bad Request\r\n\r\n";
+        printf("400\n");
 
-        Rio_writen(connfd, responseMessage, sizeof(responseMessage));
+        Rio_writen(connfd, responseMessage, strlen(responseMessage));
 
         Close(connfd);
 
@@ -110,8 +117,10 @@ void *thread(void *vargp)
 
     reqBufPos += 7;
 
-    if (strcmp(headerTestSubstr, "https"))
+    if (!strcmp(headerTestSubstr, "https"))
     {
+        printf("https detected. Switching to http\n");
+
         reqBufPos++;
     }
 
@@ -119,7 +128,7 @@ void *thread(void *vargp)
     unsigned int portSpot = 0;
     unsigned int baseURLWithPortLength = 0;
 
-    while (buf[reqBufPos + baseURLlength] != '/')
+    while (buf[reqBufPos + baseURLlength] != '/' && buf[reqBufPos + baseURLlength] != ' ') //need to modify this to handle no / on end of URL
     {
         if (buf[reqBufPos + baseURLlength] == ':')
         {
@@ -142,6 +151,7 @@ void *thread(void *vargp)
         portN[portLength] = '\0';
 
         portNumber = portN;
+        printf("Port specified: '%s'\n", portN);
 
         baseURLlength -= (portLength + 1);
     }
@@ -151,29 +161,49 @@ void *thread(void *vargp)
     memcpy(baseURL, &buf[reqBufPos], baseURLlength);
     baseURL[baseURLlength] = '\0';
 
-    reqBufPos += baseURLWithPortLength + 1;
+    printf("Base URL: '%s'\n", baseURL);
 
+    //reqBufPos += baseURLWithPortLength + 1;//begin URI, skipping first / in case the user doesn't put it
+    if (buf[reqBufPos + baseURLWithPortLength] == '/')
+    {
+        reqBufPos += baseURLWithPortLength + 1;
+    }
+    else
+    {
+        reqBufPos += baseURLWithPortLength;
+    }
     size_t URIlength = 0;
+
+
 
     while (buf[reqBufPos + URIlength] != '\r' && buf[reqBufPos + URIlength + 1] != '\n')
     {
         URIlength++;
     }
 
+    URIlength++;
+
     char URI[URIlength + 1];
 
     memcpy(URI, &buf[reqBufPos], URIlength);
 
-    URI[URIlength - 1] = '0';
+    //URI[URIlength - 2] = '.';
+    //URI[URIlength -1] = '0';
     URI[URIlength] = '\0';
 
-    reqBufPos += URIlength;
+    printf("URI: '%s'\n", URI);
+
+    reqBufPos += URIlength + 2; //skip the \r\n, pointing after \n
 
     //copy headers
-    char passThroughHeaders[2000];
+    printf("Initializing request to server...\n");
 
-    memset(passThroughHeaders, '\0', sizeof(passThroughHeaders));
+    char passThroughHeaders[wirelen];
+
+    memset(passThroughHeaders, '\0', wirelen);
+    printf("Request initialized.\n");
     strcpy(passThroughHeaders, &buf[reqBufPos]);
+    printf("Pass through headers are:\n'%s'\n", passThroughHeaders);
 
     //determine if required headers are already included
     char *hostHeaderBegin = strstr(passThroughHeaders, "Host:");
@@ -182,33 +212,50 @@ void *thread(void *vargp)
     char *userAgentHeaderBegin = strstr(passThroughHeaders, "User-Agent:");
 
     //begin assembling request string for server endpoint
-    reqWire = "GET /";
+    strcat(reqWire, "GET /");
 
     strcat(reqWire, URI);
+    printf("Teapot\n");
+
+    strcat(reqWire, "\r\n");
+
+    printf("Building request:\n'%s'\n", reqWire);
 
     if (!hostHeaderBegin)
     {
-        char *hostHeader = "Host: ";
+        //char *hostHeader = "Host: ";
+        char hostHeader[200];
+        memset(hostHeader, '\0', 200);
+        strcat(hostHeader, "Host: ");
         strcat(hostHeader, baseURL);
         strcat(reqWire, hostHeader);
+        printf("'%s'\n", reqWire);
     }
 
     if (!connectHeaderBegin)
     {
-        strcat(reqWire, "\r\nConnection: close");
+        //strcat(reqWire, "\r\nConnection: close");
+        strcat(reqWire, connectionHeader);
+        printf("'%s'\n", reqWire);
     }
 
     if (!proxyConnectHeaderBegin)
     {
-        strcat(reqWire, "\r\nProxy-Connection: close");
+        //strcat(reqWire, "\r\nProxy-Connection: close");
+        strcat(reqWire, proxyHeader);
+        printf("'%s'\n", reqWire);
     }
 
     if (!userAgentHeaderBegin)
     {
         strcat(reqWire, user_agent_hdr);
+        printf("'%s'\n", reqWire);
     }
 
     strcat(reqWire, passThroughHeaders);
+    strcat(reqWire, "\r\n\r\n");
+
+    printf("'%s'\n", reqWire);
 
     hostname = baseURL;
 
@@ -226,13 +273,16 @@ void *thread(void *vargp)
         //TODO: generate not found response for client
 
         char *responseMessage = "HTTP/1.0 404 Not Found\r\n\r\n";
+        printf("404\n");
 
-        Rio_writen(connfd, responseMessage, sizeof(responseMessage));
+        Rio_writen(connfd, responseMessage, strlen(responseMessage));
 
         Close(connfd);
 
         return NULL;
     }
+
+    printf("%s", reqWire);
 
     //Send request to server
     Rio_writen(serverfd, reqWire, strlen(reqWire));
@@ -247,6 +297,7 @@ void *thread(void *vargp)
     {
         Rio_writen(connfd, buf2, n);
     }
+    printf("200?\n");
 
     Close(serverfd);
     Close(connfd);
