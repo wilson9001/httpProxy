@@ -116,7 +116,7 @@ void *thread(void *vargp)
     unsigned int portSpot = 0;
     unsigned int baseURLWithPortLength = 0;
 
-    while (buf[reqBufPos + baseURLlength] != '/' && buf[reqBufPos + baseURLlength] != ' ') //need to modify this to handle no / on end of URL
+    while (buf[reqBufPos + baseURLlength] != '/' && buf[reqBufPos + baseURLlength] != ' ')
     {
         if (buf[reqBufPos + baseURLlength] == ':')
         {
@@ -267,7 +267,7 @@ void *thread(void *vargp)
         return NULL;
     }
 
-    printf("%s", reqWire);
+    //printf("%s", reqWire);
 
     //Send request to server
     Rio_writen(serverfd, reqWire, strlen(reqWire));
