@@ -890,14 +890,22 @@ ssize_t Rio_readn(int fd, void *ptr, size_t nbytes)
     ssize_t n;
   
     if ((n = rio_readn(fd, ptr, nbytes)) < 0)
-	unix_error("Rio_readn error");
+    {
+        printf("Rio_readn error\n");
+    }
+	//unix_error("Rio_readn error");
     return n;
 }
 
-void Rio_writen(int fd, void *usrbuf, size_t n) 
+/*void*/bool Rio_writen(int fd, void *usrbuf, size_t n) 
 {
     if (rio_writen(fd, usrbuf, n) != n)
-	unix_error("Rio_writen error");
+    {
+        printf("Rio_writen errorBBBBBB\n");
+        return false;
+    }
+	//unix_error("Rio_writen error");
+    return true;
 }
 
 void Rio_readinitb(rio_t *rp, int fd)
@@ -919,7 +927,10 @@ ssize_t Rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen)
     ssize_t rc;
 
     if ((rc = rio_readlineb(rp, usrbuf, maxlen)) < 0)
-	unix_error("Rio_readlineb error");
+    {
+        printf("Rio_readlineb error\n");
+    }
+	//unix_error("Rio_readlineb error");
     return rc;
 } 
 
@@ -1040,7 +1051,11 @@ int Open_clientfd(char *hostname, char *port)
     int rc;
 
     if ((rc = open_clientfd(hostname, port)) < 0) 
-	unix_error("Open_clientfd error");
+    {
+        printf("Open_clientfd error\n");
+        return -1;
+    }
+	//unix_error("Open_clientfd error");
     return rc;
 }
 
@@ -1049,7 +1064,11 @@ int Open_listenfd(char *port)
     int rc;
 
     if ((rc = open_listenfd(port)) < 0)
-	unix_error("Open_listenfd error");
+    {
+        printf("Open_listenfd error\n");
+        return -1;
+    }
+	//unix_error("Open_listenfd error");
     return rc;
 }
 

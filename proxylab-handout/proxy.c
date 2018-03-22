@@ -54,7 +54,13 @@ void *thread(void *vargp)
     rio_t rioClient;
 
     Rio_readinitb(&rioClient, connfd);
+
     n = Rio_readlineb(&rioClient, buf, BUFMAX);
+    if(n < 0)
+    {
+        Close(connfd);
+        return NULL;
+    }
 
     //parse request to get address, port, URI, and headers.
     char *hostname;
@@ -255,7 +261,7 @@ void *thread(void *vargp)
     //Connect to server
     int serverfd = open_clientfd(hostname, portNumber);
 
-    if (serverfd == -1)
+    if (serverfd < 0)
     {
         char *responseMessage = "HTTP/1.0 404 Not Found\r\n\r\n";
         printf("404\n");
@@ -270,7 +276,17 @@ void *thread(void *vargp)
     //printf("%s", reqWire);
 
     //Send request to server
-    Rio_writen(serverfd, reqWire, strlen(reqWire));
+    if(!Rio_writen(serverfd, reqWire, strlen(reqWire)))
+    {
+        char *responseMessage = "HTTP/1.0 500 Internal Server Error\r\n\r\n";
+        printf("500\n");
+        Rio_writen(connfd, responseMessage, strlen(responseMessage));
+        //printf("About to close serverfd %d.\n", serverfd);
+        Close(serverfd);
+        //printf("About to close connfd %d.\n", connfd);
+        Close(connfd);
+        return NULL;
+    }
 
     //Read response and copy to client
 
@@ -280,6 +296,13 @@ void *thread(void *vargp)
     Rio_readinitb(&rioServer, serverfd);
     while ((n = Rio_readlineb(&rioServer, buf2, BUFMAX)) != 0)
     {
+        if(n < 0)
+        {
+            Close(serverfd);
+    Close(connfd);
+            return NULL;
+        }
+
         Rio_writen(connfd, buf2, n);
     }
     printf("200?\n");
