@@ -55,10 +55,14 @@ void *thread(void *vargp)
 
     Rio_readinitb(&rioClient, connfd);
 
+    //while(true)
+    //{
+    memset(buf, '\0', BUFMAX);
     n = Rio_readlineb(&rioClient, buf, BUFMAX);
     if(n < 0)
     {
-        Close(connfd);
+       Close(connfd);
+        //continue;
         return NULL;
     }
 
@@ -87,6 +91,7 @@ void *thread(void *vargp)
         Close(connfd);
 
         return NULL;
+        //continue;
     }
 
     unsigned int reqBufPos = 4;
@@ -107,6 +112,7 @@ void *thread(void *vargp)
         Close(connfd);
 
         return NULL;
+        //continue;
     }
 
     reqBufPos += 7;
@@ -271,6 +277,7 @@ void *thread(void *vargp)
         Close(connfd);
 
         return NULL;
+        //continue;
     }
 
     //printf("%s", reqWire);
@@ -286,6 +293,7 @@ void *thread(void *vargp)
         //printf("About to close connfd %d.\n", connfd);
         Close(connfd);
         return NULL;
+        //continue;
     }
 
     //Read response and copy to client
@@ -299,7 +307,10 @@ void *thread(void *vargp)
         if(n < 0)
         {
             Close(serverfd);
-    Close(connfd);
+            char *errorMsg = "\n\n\nHTTP/1.0 500 Internal Server Error\r\n\r\n";
+            Rio_writen(connfd, errorMsg, strlen(errorMsg));
+            //break;
+            Close(connfd);
             return NULL;
         }
 
@@ -308,6 +319,7 @@ void *thread(void *vargp)
     printf("200?\n");
 
     Close(serverfd);
+    //}
     Close(connfd);
     return NULL;
 }
