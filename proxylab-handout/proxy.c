@@ -3,11 +3,15 @@
 #include <stdbool.h>
 #include "csapp.h"
 #include <string.h>
+#include "sbuf.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 #define BUFMAX 1000
+#define NTHREADS 4
+#define SBUFSIZE 16
+
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
@@ -17,9 +21,11 @@ static const int wirelen = 2000;
 
 void *thread(void *vargp);
 
+sbuf_t sbuf;
+
 int main(int argc, char **argv)
 {
-    int listenfd, *connfdp;
+    int listenfd, connfd;
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     pthread_t tid;
@@ -31,21 +37,33 @@ int main(int argc, char **argv)
     }
     listenfd = Open_listenfd(argv[1]);
 
-    while (1)
+    sbuf_init(&sbuf, SBUFSIZE);
+
+    for(int i = 0; i < NTHREADS; i++)
+    {
+        Pthread_create(&tid, NULL, thread, NULL);
+    }
+
+    while (true)
     {
         clientlen = sizeof(struct sockaddr_storage);
-        connfdp = Malloc(sizeof(int));
-        *connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-        Pthread_create(&tid, NULL, thread, connfdp);
+        //connfdp = Malloc(sizeof(int));
+        connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        sbuf_insert(&sbuf, connfd);
+        //Pthread_create(&tid, NULL, thread, connfdp);
     }
 }
 
 /* Thread routine */
 void *thread(void *vargp)
 {
-    int connfd = *((int *)vargp);
+    //int connfd = *((int *)vargp);
     Pthread_detach(pthread_self());
-    Free(vargp);
+    //Free(vargp);
+    while(true)
+    {
+    int connfd = sbuf_remove(&sbuf);
+    
     printf("Thread created for connection on file descriptor %d.\n", connfd); // <--print functions are not thread safe... will need to remove.
 
     //Read data from client
@@ -321,5 +339,6 @@ void *thread(void *vargp)
     Close(serverfd);
     //}
     Close(connfd);
+    }
     return NULL;
 }

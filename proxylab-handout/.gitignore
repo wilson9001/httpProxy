@@ -6,3 +6,5 @@ home.html
 tiny.c
 adder
 tiny
+sbuf.o
+pseudoCodeForStuff.txt
