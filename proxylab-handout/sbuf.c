@@ -6,7 +6,9 @@
 /* $begin sbuf_init */
 void sbuf_init(sbuf_t *sp, int n)
 {
-    sp->buf = Calloc(n, sizeof(int)); 
+    //sp->buf = Calloc(n, sizeof(int)); 
+    int buffer[n];
+    sp->buf = buffer;
     sp->n = n;                       /* Buffer holds max of n items */
     sp->front = sp->rear = 0;        /* Empty buffer iff front == rear */
     Sem_init(&sp->mutex, 0, 1);      /* Binary semaphore for locking */
@@ -17,10 +19,10 @@ void sbuf_init(sbuf_t *sp, int n)
 
 /* Clean up buffer sp */
 /* $begin sbuf_deinit */
-void sbuf_deinit(sbuf_t *sp)
+/*void sbuf_deinit(sbuf_t *sp)
 {
     Free(sp->buf);
-}
+}*/
 /* $end sbuf_deinit */
 
 /* Insert item onto the rear of shared buffer sp */
