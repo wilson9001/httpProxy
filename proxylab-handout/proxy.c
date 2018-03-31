@@ -3,14 +3,17 @@
 #include <stdbool.h>
 #include "csapp.h"
 #include <string.h>
+#include <time.h>
 //#include "sbuf.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
-#define BUFMAX 1000
+//#define BUFMAX 1000
+#define BUFMAX 1049000
 #define NTHREADS 4
 #define SBUFSIZE 16
+#define WIRELEN 2000
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -21,6 +24,9 @@ static const int wirelen = 2000;
 
 static int FDbuffer[SBUFSIZE];
 static char *logBuf[NTHREADS];
+static int currentCacheSize;
+static int readcnt;
+sem_t mutex, w, timeMutex;
 
 void *thread(void *vargp);
 void *logThread();
@@ -50,6 +56,16 @@ typedef struct
     sem_t items; /* Counts available items */
 } logbuf_t;
 
+typedef struct
+{
+    int objectSize;
+    unsigned long timeLastAccessed;
+    char request[WIRELEN];
+    char data[MAX_OBJECT_SIZE];
+} cachentry;
+
+cachentry *cache[MAX_CACHE_SIZE];
+
 //void sbuf_init(sbuf_t *sp, int n);
 //void sbuf_deinit(sbuf_t *sp);
 void sbuf_insert(sbuf_t *sp, int item);
@@ -58,8 +74,20 @@ int sbuf_remove(sbuf_t *sp);
 sbuf_t fileDescriptors;
 logbuf_t logEntries;
 
+cachentry entryFactory(int size, unsigned long time, char *req, char *dat)
+{
+    cachentry newEntry;
+    newEntry.objectSize = size;
+    newEntry.timeLastAccessed = time;
+    strcpy(newEntry.request, req);
+    strcpy(newEntry.data,dat);
+
+    return newEntry;
+}
+
 int main(int argc, char **argv)
 {
+    printf("Begin main\n");
     int listenfd, connfd;
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
@@ -71,6 +99,25 @@ int main(int argc, char **argv)
         exit(0);
     }
 
+    //initialize cache
+    printf("Initializing cache\n");
+    //memset(&cache, '\0', sizeof(cachentry) * MAX_CACHE_SIZE);
+    for (int i = 0; i < MAX_CACHE_SIZE; i++)
+    {
+        cache[i] = NULL;
+        /*cache[i].objectSize = 0;
+        memset(&cache[i].request, '\0', wirelen);
+        memset(&cache[i].data, '\0', MAX_OBJECT_SIZE);
+        cache[i].timeLastAccessed = 0;*/
+    }
+
+    currentCacheSize = 0;
+    readcnt = 0;
+    Sem_init(&mutex, 0, 1);
+    Sem_init(&w, 0, 1);
+    Sem_init(&timeMutex, 0, 1);
+
+    printf("Creating file descriptor buffer\n");
     //create file descriptor buffer
     fileDescriptors.buf = FDbuffer;
     fileDescriptors.n = SBUFSIZE;                     /* Buffer holds max of n items */
@@ -379,58 +426,250 @@ void *thread(void *vargp)
 
         printf("Port number just before openfd: %s\n", portNumber);
 
-        //Connect to server
-        int serverfd = open_clientfd(hostname, portNumber);
-
-        if (serverfd < 0)
-        {
-            char *responseMessage = "HTTP/1.0 404 Not Found\r\n\r\n";
-            printf("404\n");
-
-            Rio_writen(connfd, responseMessage, strlen(responseMessage));
-
-            Close(connfd);
-
-            continue;
-            //return NULL;
-        }
-
-        //Send request to server
-        if (!Rio_writen(serverfd, reqWire, strlen(reqWire)))
-        {
-            char *responseMessage = "HTTP/1.0 500 Internal Server Error\r\n\r\n";
-            printf("500\n");
-            Rio_writen(connfd, responseMessage, strlen(responseMessage));
-            Close(serverfd);
-            Close(connfd);
-            continue;
-            //return NULL;
-        }
-
-        //Read response and copy to client
-
         char buf2[BUFMAX];
-        rio_t rioServer;
+        bool inCache = false;
 
-        Rio_readinitb(&rioServer, serverfd);
-        while ((n = Rio_readlineb(&rioServer, buf2, BUFMAX)) != 0)
+        //check if cached. If so return cached object & update timestamp
+       /* for (int i = 0; i < MAX_CACHE_SIZE; i++)
         {
-            if (n < 0)
+            //lock writing mutex here?
+            if (!strcmp(cache[i]->request, reqWire))
             {
+                inCache = true;
+                strcpy(buf2, cache[i]->request);
+                n = cache[i]->objectSize;
+                cache[i]->timeLastAccessed = (unsigned long)time(NULL);
+                //unlock mutex here?
+                break;
+            }
+            //unlock mutex here?
+        }*/
+
+        P(&mutex);
+        readcnt++;
+        if (readcnt == 1)
+        {
+            P(&w);
+        }
+        V(&mutex);
+
+        for (int i = 0; i < MAX_CACHE_SIZE; i++)
+        {
+            if(cache[i])
+            {
+            if (!strcmp(cache[i]->request, reqWire))
+            {
+                inCache = true;
+                printf("Item found in cache\n");
+                strcpy(buf2, cache[i]->data);//This will need to be fixed to run to client from here.
+                n = cache[i]->objectSize;
+                P(&timeMutex);
+                cache[i]->timeLastAccessed = (unsigned long)time(NULL);
+                V(&timeMutex);
+                break;
+            }
+        }
+        }
+
+        P(&mutex);
+        readcnt--;
+        if (!readcnt)
+        {
+            V(&w);
+        }
+        V(&mutex);
+
+        if (!inCache)
+        {
+            //Connect to server
+            int serverfd = open_clientfd(hostname, portNumber);
+
+            if (serverfd < 0)
+            {
+                char *responseMessage = "HTTP/1.0 404 Not Found\r\n\r\n";
+                printf("404\n");
+
+                Rio_writen(connfd, responseMessage, strlen(responseMessage));
+
+                Close(connfd);
+
+                continue;
+                //return NULL;
+            }
+
+            //Send request to server
+            if (!Rio_writen(serverfd, reqWire, strlen(reqWire)))
+            {
+                char *responseMessage = "HTTP/1.0 500 Internal Server Error\r\n\r\n";
+                printf("500\n");
+                Rio_writen(connfd, responseMessage, strlen(responseMessage));
                 Close(serverfd);
-                char *errorMsg = "\n\n\nHTTP/1.0 500 Internal Server Error\r\n\r\n";
-                Rio_writen(connfd, errorMsg, strlen(errorMsg));
                 Close(connfd);
                 continue;
                 //return NULL;
             }
 
-            Rio_writen(connfd, buf2, n);
-        }
-        printf("200?\n");
+            //Read response and copy to client
 
-        Close(serverfd);
-        Close(connfd);
+            //char buf2[BUFMAX];
+            rio_t rioServer;
+
+            unsigned int offset = 0;
+            char cacheData[MAX_OBJECT_SIZE];
+            memset(cacheData, '\0', MAX_OBJECT_SIZE);
+
+            bool tooBig = false;
+
+            Rio_readinitb(&rioServer, serverfd);
+            while ((n = Rio_readlineb(&rioServer, buf2, BUFMAX)) != 0)
+            {
+                if (n < 0)
+                {
+                    Close(serverfd);
+                    char *errorMsg = "\n\n\nHTTP/1.0 500 Internal Server Error\r\n\r\n";
+                    Rio_writen(connfd, errorMsg, strlen(errorMsg));
+                    Close(connfd);
+                    continue;
+                    //return NULL;
+                }
+
+                if (!tooBig && ((offset + n) < MAX_OBJECT_SIZE))
+                {
+                    strcat(&cacheData[offset], buf2);
+                    //strcpy(&cacheData[offset], buf2);
+                    offset += n;
+                }
+                else
+                {
+                    tooBig = true;
+                }
+
+                Rio_writen(connfd, buf2, n);
+            }
+
+            printf("200?\n");
+
+            Close(serverfd);
+            Close(connfd);
+
+           if (!tooBig)
+            {
+                //log item to cache
+                printf("About to log item to cache\n");
+                P(&w);
+                if ((currentCacheSize + strlen(cacheData)) < MAX_CACHE_SIZE)
+                {
+                    //create new entry
+                    for (int i = 0; i < MAX_CACHE_SIZE; i++)
+                    {
+                        if (!cache[i])
+                        {
+                            cache[i] = malloc(sizeof(cachentry));
+                            //cache[i] = cachentry;
+
+                            strcpy(cache[i]->data, cacheData);
+                            cache[i]->objectSize = strlen(cacheData);
+                            strcpy(cache[i]->request, reqWire);
+                            cache[i]->timeLastAccessed = (unsigned long)time(NULL);
+                            currentCacheSize += cache[i]->objectSize;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    //Remove oldest entry from cache and then keep removing until there is enough space
+                    int lastCache = 0;
+
+                    while (!cache[lastCache])
+                    {
+                        lastCache++;
+                    }
+
+                    unsigned long oldestDateTime = cache[lastCache]->timeLastAccessed;
+
+                    for (int i = 0; i < MAX_CACHE_SIZE; i++)
+                    {
+                        if(cache[i])
+                        {
+                            if(cache[i]->timeLastAccessed < oldestDateTime)
+                            {
+                                lastCache= i;
+                                oldestDateTime = cache[i]->timeLastAccessed;
+                            }
+                        }
+                        /*if (!cache[i].objectSize)
+                        {
+                            continue;
+                        }
+                        if (cache[i].timeLastAccessed < oldestDateTime)
+                        {
+                            lastCache = i;
+                            oldestDateTime = cache[i].timeLastAccessed;
+                        }*/
+                    }
+
+                    memset(&cache[lastCache]->data, '\0', MAX_OBJECT_SIZE);
+                    memset(&cache[lastCache]->request, '\0', wirelen);
+                    currentCacheSize -= cache[lastCache]->objectSize;
+
+                    strcpy(cache[lastCache]->data, cacheData);
+                    cache[lastCache]->objectSize = strlen(cacheData);
+                    strcpy(cache[lastCache]->request, reqWire);
+                    cache[lastCache]->timeLastAccessed = (unsigned long)time(NULL);
+                    currentCacheSize += cache[lastCache]->objectSize;
+
+                    if (currentCacheSize > MAX_CACHE_SIZE)
+                    {
+                        while (currentCacheSize > MAX_CACHE_SIZE)
+                        {
+                            lastCache = 0;
+
+                            while (!cache[lastCache])
+                            {
+                                lastCache++;
+                            }
+
+                            oldestDateTime = cache[lastCache]->timeLastAccessed;
+
+                            for (int i = 0; i < MAX_CACHE_SIZE; i++)
+                            {
+                                if(cache[i])
+                                {
+                                    if(cache[i]->timeLastAccessed < oldestDateTime)
+                                    {
+                                        lastCache = i;
+                                        oldestDateTime = cache[i]->timeLastAccessed;
+                                    }
+                                }
+                                /*if (!cache[i].objectSize)
+                                {
+                                    continue;
+                                }
+                                if (cache[i].timeLastAccessed < oldestDateTime)
+                                {
+                                    lastCache = i;
+                                    oldestDateTime = cache[i].timeLastAccessed;
+                                }*/
+                            }
+
+                            /*memset(&cache[lastCache].data, '\0', MAX_OBJECT_SIZE);
+                            memset(&cache[lastCache].request, '\0', wirelen);
+                            cache[lastCache].timeLastAccessed = 0;*/
+                            currentCacheSize -= cache[lastCache]->objectSize;
+                            //cache[lastCache].objectSize = 0;
+                            free(&cache[lastCache]);
+                        }
+                    }
+                }
+                V(&w);
+            }
+        }
+        else
+        {
+            Rio_writen(connfd, buf2, n);
+            close(connfd);
+        }
     }
 
     //Have to figure out how to make code go here...

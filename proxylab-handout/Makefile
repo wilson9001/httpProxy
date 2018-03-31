@@ -6,6 +6,7 @@
 
 CC = gcc
 CFLAGS = -g -Wall
+#-mcmodel=large
 LDFLAGS = -lpthread
 
 all: proxy
